@@ -54,29 +54,28 @@ client.recreate_collection(
 )
 
 # 4. INITIALIZE ACCUMULATORS
-# Structure: batch_accumulators[batch_id][drug_name] = {'sum': vector, 'count': int}
-batch_accumulators = defaultdict(lambda: defaultdict(lambda: {'sum': np.zeros(vector_dim), 'count': 0}))
+# Structure: drug_accumulators[drug_name] = {'sum': vector, 'count': int}
+# We accumulate all vectors for each drug globally, disregarding batches
+drug_accumulators = defaultdict(lambda: {'sum': np.zeros(vector_dim), 'count': 0})
 
 # Process rows
 processed_rows = 0
-limit_rows = 1000  # Set high enough to capture full batches (or remove for production)
 
-print(f"Streaming and aggregating rows (Limit: {limit_rows})...")
+print("Streaming and aggregating all rows...")
 
-# 5. STREAM & AGGREGATE (The 'Map' Phase)
+# 5. STREAM & AGGREGATE (Global aggregation, disregarding batches)
 # All rows from filtered_iter are already CVCL_0023, so no need to check again
 for row in filtered_iter:
-    if processed_rows >= limit_rows:
-        print(f"Limit of {limit_rows} reached. Stopping stream.")
-        break
-
     # Extract Data
-    batch_id = row[BATCH_ID_COL]
     drug = row["drug"]
     vector = np.array(row["mosaicfm-3b-prod-cont-MFMv2"], dtype=np.float32)
 
-    # Accumulate
-    acc = batch_accumulators[batch_id][drug]
+    # Print when DMSO is found
+    if drug == CONTROL_DRUG:
+        print(f"Found DMSO at row {processed_rows + 1}")
+
+    # Accumulate globally (disregarding batches)
+    acc = drug_accumulators[drug]
     acc['sum'] += vector
     acc['count'] += 1
 
@@ -84,46 +83,59 @@ for row in filtered_iter:
     if processed_rows % 100 == 0:
         print(f"Processed {processed_rows} rows...")
 
-# 6. COMPUTE DELTAS (The 'Reduce' Phase)
-print("Computing Sample-Normalized Deltas...")
+# 6. COMPUTE GLOBAL BASELINE AND DELTAS
+print("Computing Global DMSO Baseline and Drug Deltas...")
 
-final_drug_deltas = defaultdict(list)
-skipped_batches = 0
+# Check if we have DMSO control data
+if CONTROL_DRUG not in drug_accumulators:
+    print(f"ERROR: No {CONTROL_DRUG} control found. Cannot compute deltas.")
+    os._exit(1)
 
-for batch_id, drugs_data in batch_accumulators.items():
+# Compute global DMSO baseline (average over all DMSO states)
+dmso_stats = drug_accumulators[CONTROL_DRUG]
+global_dmso_baseline = dmso_stats['sum'] / dmso_stats['count']
+print(f"Global DMSO baseline computed from {dmso_stats['count']} samples.")
+
+# Compute deltas for all drugs (excluding DMSO itself)
+final_drug_deltas = {}
+
+for drug, stats in drug_accumulators.items():
+    if drug == CONTROL_DRUG:
+        continue  # Skip DMSO itself
     
-    # Check A: Does this batch have the Control (DMSO)?
-    if CONTROL_DRUG not in drugs_data:
-        skipped_batches += 1
-        continue # Cannot normalize this batch
-        
-    # Check B: Calculate Local Baseline Vector
-    dmso_stats = drugs_data[CONTROL_DRUG]
-    local_baseline = dmso_stats['sum'] / dmso_stats['count']
+    # Compute global mean for this drug (average over all treated embeddings)
+    drug_mean = stats['sum'] / stats['count']
     
-    # Check C: Calculate Deltas for all other drugs in this batch
-    for drug, stats in drugs_data.items():
-        if drug == CONTROL_DRUG:
-            continue
-            
-        drug_mean = stats['sum'] / stats['count']
-        
-        # KEY STEP: Vector Subtraction
-        # "Drug Effect" = "Drug State" - "Baseline State"
-        delta = drug_mean - local_baseline
-        
-        final_drug_deltas[drug].append(delta)
+    # KEY STEP: Vector Subtraction
+    # "Drug Effect" = "Drug State" - "Global Baseline State"
+    delta = drug_mean - global_dmso_baseline
+    
+    final_drug_deltas[drug] = delta
 
-print(f"Aggregation Complete. Skipped {skipped_batches} batches (missing DMSO).")
+print(f"Aggregation Complete. Computed deltas for {len(final_drug_deltas)} unique drugs.")
 
 # 7. UPLOAD TO QDRANT
-print(f"Uploading signatures for {len(final_drug_deltas)} unique drugs...")
+print(f"Uploading signatures for {len(final_drug_deltas)} unique drugs plus DMSO baseline...")
 
 points_to_upload = []
 
-for drug, delta_list in final_drug_deltas.items():
-    # Average the deltas from all valid batches
-    global_delta = np.mean(np.stack(delta_list), axis=0)
+# Add DMSO to DMSO entry (zero vector, since DMSO - DMSO = 0)
+dmso_to_dmso_delta = np.zeros(vector_dim)
+dmso_sample_count = drug_accumulators[CONTROL_DRUG]['count']
+dmso_point_id = abs(hash(f"{TARGET_CELL_LINE}_{CONTROL_DRUG}"))
+points_to_upload.append(PointStruct(
+    id=dmso_point_id,
+    vector=dmso_to_dmso_delta.tolist(),
+    payload={
+        "drug": CONTROL_DRUG,
+        "cell_line": TARGET_CELL_LINE,
+        "samples_aggregated": dmso_sample_count,
+    }
+))
+
+for drug, delta in final_drug_deltas.items():
+    # Get the count of samples used for this drug
+    drug_sample_count = drug_accumulators[drug]['count']
     
     # Create deterministic ID based on Drug Name
     # (Using string hashing so we don't need a counter)
@@ -131,13 +143,11 @@ for drug, delta_list in final_drug_deltas.items():
     
     points_to_upload.append(PointStruct(
         id=point_id,
-        vector=global_delta.tolist(),
+        vector=delta.tolist(),
         payload={
             "drug": drug,
             "cell_line": TARGET_CELL_LINE,
-            "cell_line_id": "CVCL_0023",
-            "batches_aggregated": len(delta_list),
-            "type": "drug_signature_delta"
+            "samples_aggregated": drug_sample_count,            
         }
     ))
 
@@ -148,6 +158,6 @@ if points_to_upload:
     )
     print(f"SUCCESS: Uploaded {len(points_to_upload)} vectors to '{COLLECTION_NAME}'.")
 else:
-    print("WARNING: No vectors to upload. (Did you process enough rows to find matching DMSO controls?)")
+    print("WARNING: No vectors to upload. (Did you process enough rows to find DMSO controls and treated samples?)")
 
 os._exit(0)
