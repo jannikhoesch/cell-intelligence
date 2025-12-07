@@ -1,6 +1,6 @@
 # 🧬 Elix
 
-**[🚀 Live Demo](https://preview--drug-effect-explorer.lovable.app)** | Built for Norrsken Fixathon 2025
+**[🚀 Live Demo](https://drug-effect-explorer.lovable.app)** | Built for Norrsken Fixathon 2025
 
 ## Overview
 
