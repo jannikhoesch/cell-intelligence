@@ -1,63 +1,34 @@
-# Cell Intelligence - Drug Similarity Analysis
+# 🧬 Elix
 
-A system for analyzing drug treatment signatures on cell lines using vector embeddings and similarity search.
+**[🚀 Live Demo](https://preview--drug-effect-explorer.lovable.app)** | Built for Norrsken Fixathon 2025
 
-## Project Structure
+## Overview
+
+Elix is an AI engine that discovers new therapeutic uses for existing drugs by analyzing **phenotypic effects** rather than chemical structure. Traditional drug discovery misses connections between compounds that look different but behave similarly. Elix changes this by mapping how drugs actually alter cellular states, turning biology into a navigable geometric space.
+
+## How It Works
+
+Elix operates on the principle that drugs with similar cellular effects are mathematically close in high-dimensional space.
+
+1. **Data Ingestion**: Processes the Tahoe-100M dataset (A549 Lung Cancer subset), aggregating single-cell transcriptomic embeddings across multiple samples per drug
+
+2. **Delta Vector Calculation**: Computes the precise biological signal by subtracting the global DMSO baseline:
+   ```
+   V_delta = V_drug_aggregate - V_Global_DMSO_Baseline
+   ```
+   This cancels experimental noise, isolating pure drug effects.
+
+3. **Vector Search**: Stores drug signatures in Qdrant Cloud for fast cosine-similarity search in latent space
+
+4. **Interactive Exploration**: Researchers can query drugs, visualize phenotypic neighbors in a network graph, and get AI-powered biological explanations
+
+## Architecture
 
 ```
-cell-intelligence/
-├── backend/              # FastAPI server
-│   ├── __init__.py
-│   ├── main.py          # FastAPI application
-│   └── models.py        # Pydantic models
-│
-├── data/                # Data processing and ETL
-│   ├── __init__.py
-│   ├── config.py        # Qdrant client configuration
-│   ├── load.py          # Main data loading script
-│   ├── process.py       # Data processing utilities
-│   └── utils.py         # Helper functions
-│
-├── scripts/             # Utility scripts
-│   ├── setup_db.py      # Database setup/initialization
-│   └── validate_data.py # Data validation
-│
-├── .env                 # Environment variables (not in git)
-├── .gitignore
-├── requirements.txt     # Python dependencies
-└── README.md           # This file
+Data Pipeline (Python) → Qdrant Cloud → FastAPI Backend → React Frontend
 ```
 
-## Setup
-
-1. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-2. Configure environment variables in `.env`:
-```
-QDRANT_URL=your_qdrant_url
-QDRANT_API_KEY=your_api_key
-CORS_ORIGINS=*
-```
-
-3. Load data into Qdrant:
-```bash
-python -m data.load
-```
-
-4. Start the backend server:
-```bash
-cd backend
-uvicorn main:app --reload
-```
-
-## API Endpoints
-
-- `GET /api/drugs` - Get all drug treatment signatures
-- `GET /api/drugs/{drug_id}` - Get a specific drug treatment
-- `GET /api/similar/{drug_id}` - Find similar drug treatments
-- `GET /api/network` - Get network graph data
-- `GET /health` - Health check
-
+- **Backend**: FastAPI serving drug data and similarity queries
+- **Frontend**: React + TypeScript with interactive D3.js network visualization
+- **Vector DB**: Qdrant Cloud for high-performance similarity search
+- **AI Copilot**: Integrated LLM with PubChem integration for biological insights
