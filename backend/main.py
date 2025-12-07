@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from qdrant_client import QdrantClient
 from dotenv import load_dotenv
 
-from models import Drug, DrugSimilarity, NetworkNode, NetworkLink, NetworkData
+from .models import Drug, DrugSimilarity, NetworkNode, NetworkLink, NetworkData
 
 load_dotenv()
 
