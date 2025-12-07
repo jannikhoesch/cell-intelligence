@@ -60,12 +60,17 @@ drug_accumulators = defaultdict(lambda: {'sum': np.zeros(vector_dim), 'count': 0
 
 # Process rows
 processed_rows = 0
+limit_rows = 40000
 
-print("Streaming and aggregating all rows...")
+print(f"Streaming and aggregating rows (Limit: {limit_rows})...")
 
 # 5. STREAM & AGGREGATE (Global aggregation, disregarding batches)
 # All rows from filtered_iter are already CVCL_0023, so no need to check again
 for row in filtered_iter:
+    if processed_rows >= limit_rows:
+        print(f"Limit of {limit_rows} reached. Stopping stream.")
+        break
+
     # Extract Data
     drug = row["drug"]
     vector = np.array(row["mosaicfm-3b-prod-cont-MFMv2"], dtype=np.float32)
