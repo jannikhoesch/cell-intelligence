@@ -1,0 +1,4 @@
+project_id = "zlosbakoyrxmssmloxhz"
+
+[functions.drug-chat]
+verify_jwt = false
