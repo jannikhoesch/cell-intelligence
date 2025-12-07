@@ -32,3 +32,7 @@ Data Pipeline (Python) → Qdrant Cloud → FastAPI Backend → React Frontend
 - **Frontend**: React + TypeScript with interactive D3.js network visualization
 - **Vector DB**: Qdrant Cloud for high-performance similarity search
 - **AI Copilot**: Integrated LLM with PubChem integration for biological insights
+
+## Preview
+
+<img width="1470" height="830" alt="image" src="https://github.com/user-attachments/assets/b923695f-8c6d-4b57-a36b-98691e200702" />
